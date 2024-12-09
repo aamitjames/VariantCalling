@@ -1,0 +1,126 @@
+"""AmitJames SARS-CoV - Notebook.ipynb
+
+Intended to be used as a notebook file.
+"""
+
+## SARS-CoV Genome Analysis Pipeline
+# Amit James
+
+# This notebook processes NGS data to identify mutations in two SARS-CoV-2 samples compared to a reference genome. The pipeline includes:
+
+# Data Preparation: Downloading the samples and reference genome.
+# Alignment: Mapping reads to the reference genome using bwa.
+# Variant Calling: Identifying mutations using bcftools.
+# Data Analysis: Parsing variants into tables and comparing mutations.
+# Visualization: Creating a bar chart to summarize the mutation counts.
+
+## Required Installations:
+# The following tools must be installed: bwa, bcftools, and Python libraries (cyvcf2, pandas, matplotlib).
+
+# Run the cells in order (top -> down) to ensure the code works properly.
+
+# Starting by installing necessary libraries.
+!apt install bcftools
+!apt install bwa
+!apt install samtools
+!pip install cyvcf2
+!apt-get install -y ncbi-blast+
+
+# Downloading the SARS-CoV files, and output them.
+!gdown 1-2h_NXGEvUIcSgtQnpeRy3BN8QKmbARf
+!gdown 1-1zFQh9lo7O1Fe6dR6abgwqBZlu4TBB-
+
+!gdown 1-3y7YBrnJmpwdxTqimDGewWpTIkzlWei
+!gdown 1-2jBX4sV28m7FoauSMH2Tik65h4m72ig
+
+# Downloading the reference genome.
+!gdown 1yTOH-9w0RbcBhwetNWzYxFXENtiyPlzW
+
+# Index our reference genome.
+!bwa index WuhanRef.fasta
+
+# FASTQ file alignment to the reference genome.
+!bwa mem WuhanRef.fasta SARS-LONG-EDT.R1.fastq SARS-LONG-EDT.R2.fastq > sample1_alignment.sam
+
+!bwa mem WuhanRef.fasta SARS.R1.fastq SARS.R2.fastq > sample2_alignment.sam
+
+# Converting SAM to BAM and sorting:
+!samtools view -bS sample1_alignment.sam > sample1_alignment.bam
+!samtools sort sample1_alignment.bam -o sample1_alignment_sorted.bam
+
+!samtools view -bS sample2_alignment.sam > sample2_alignment.bam
+!samtools sort sample2_alignment.bam -o sample2_alignment_sorted.bam
+
+# Calling variants against the reference genome.
+!bcftools mpileup -f WuhanRef.fasta sample1_alignment_sorted.bam | bcftools call -mv -Ov -o sample1_variants.vcf
+!bcftools mpileup -f WuhanRef.fasta sample2_alignment_sorted.bam | bcftools call -mv -Ov -o sample2_variants.vcf
+
+# Parsing the VCF into the pandas dataframe.
+import cyvcf2
+import pandas as pd
+
+# Function to parse a VCF file into a DataFrame using cyvcf2
+def parse_vcf_to_df(vcf_file):
+    vcf = cyvcf2.VCF(vcf_file)
+    records = []
+
+    for record in vcf:
+        records.append({
+            'POS': record.POS,
+            'REF': record.REF,
+            'ALT': ','.join(record.ALT),
+            'QUAL': record.QUAL
+        })
+
+    return pd.DataFrame(records)
+
+# Parsing both VCF files into DataFrames
+sample1_mutations = parse_vcf_to_df('sample1_variants.vcf')
+sample2_mutations = parse_vcf_to_df('sample2_variants.vcf')
+
+# The individual dataframe for sample 1.
+print("Sample 1 mutations:")
+display(sample1_mutations)
+
+## Table Description
+# Sample 1: 12 mutations were identified, which suggests a modest level of divergence from the reference genome.
+
+# The individual dataframe for sample 2.
+print("Sample 2 mutations:")
+display(sample2_mutations)
+
+## Table Description
+# Sample 2: 64 mutations were identified, indicating a higher degree of genomic variability.
+
+# The individual dataframe for the shared mutations.
+shared_mutations = pd.merge(sample1_mutations, sample2_mutations, on=['POS', 'REF', 'ALT'], suffixes=('_sample1', '_sample2'))
+
+print("\nShared mutations:")
+display(shared_mutations)
+
+## Table Description
+# Shared Mutations: Only 4 mutations were shared between the two samples, highlighting substantial genomic differences.
+
+# Creating a bar chart to show the difference in number of mutations in each individual sample + shared mutations.
+import matplotlib.pyplot as plt
+
+num_mutations_sample1 = len(sample1_mutations)
+num_mutations_sample2 = len(sample2_mutations)
+num_mutations_shared = len(shared_mutations)
+
+labels = ['Sample 1', 'Sample 2', 'Shared Mutations']
+mutation_counts = [num_mutations_sample1, num_mutations_sample2, num_mutations_shared]
+
+plt.figure(figsize=(8, 6))
+plt.bar(labels, mutation_counts, color=['#8a1d76', '#b8eb13', '#6c11b8'])
+
+
+plt.title('Number of Mutations in Each Sample and Shared Mutations')
+plt.xlabel('Mutation Category')
+plt.ylabel('Number of Mutations')
+
+plt.show()
+
+### Mutation Count Comparison
+# This bar chart shows the number of unique mutations in each sample and the shared mutations between the two samples.
+# This helps visualize how similar or different the samples are in terms of genetic variation.
